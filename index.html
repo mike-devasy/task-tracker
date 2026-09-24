@@ -1,0 +1,130 @@
+<!-- @format -->
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Task Tracker</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+		<div class="app">
+<aside class="app-sidebar">
+  <h2 class="app-sidebar__logo">Tasker</h2>
+
+  <nav class="app-sidebar__nav">
+    <button type="button" class="app-sidebar__item is-active" data-filter="all">
+      <span>All tasks</span>
+      <span class="app-sidebar__count" id="count-all">0</span>
+    </button>
+
+    <button type="button" class="app-sidebar__item" data-filter="today">
+      <span>Today</span>
+      <span class="app-sidebar__count" id="count-today">0</span>
+    </button>
+
+    <button type="button" class="app-sidebar__item" data-filter="upcoming">
+      <span>Upcoming</span>
+      <span class="app-sidebar__count" id="count-upcoming">0</span>
+    </button>
+
+    <button type="button" class="app-sidebar__item" data-filter="completed">
+      <span>Completed</span>
+      <span class="app-sidebar__count" id="count-completed">0</span>
+    </button>
+		<button
+  type="button"
+  class="app-sidebar__item"
+  data-filter="overdue"
+>
+  <span>Overdue</span>
+  <span class="app-sidebar__count" id="count-overdue">0</span>
+</button>
+  </nav>
+</aside>
+    <main class="tracker">
+      <div class="tracker__container">
+        <h1 class="tracker__title">Task Tracker</h1>
+        <div class="tracker__filter-block">
+          <h3>Фильтр по приоритету</h3>
+        </div>
+        <select class="tracker__filter" id="task-priority-filter">
+          <option value="all">All</option>
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
+        <form class="tracker__form form-tracker" id="task-form">
+          <input
+            class="form-tracker__input"
+            id="task-title"
+            type="text"
+            placeholder="Название задачи"
+            required
+          />
+
+          <textarea
+            class="form-tracker__description"
+            id="task-description"
+            placeholder="Описание"
+          ></textarea>
+
+          <select class="form-tracker__select" id="task-status">
+            <option class="task-item__status" data-id="${task.id}" value="todo">
+              To do
+            </option>
+            <option
+              class="task-item__status"
+              data-id="${task.id}"
+              value="in_progress"
+            >
+              In progress
+            </option>
+            <option class="task-item__status" data-id="${task.id}" value="done">
+              Done
+            </option>
+          </select>
+
+          <select class="form-tracker__select" id="task-priority">
+            <option value="low">
+              <span class="priority priority--low">Low</span>
+            </option>
+            <option value="medium" selected>
+              <span class="priority priority--medium">Medium</span>
+            </option>
+            <option value="high">
+              <span class="priority priority--high">High</span>
+            </option>
+          </select>
+
+          <input class="form-tracker__date" id="task-due-date" type="date" />
+
+          <button class="form-tracker__button" type="submit">
+            Добавить задачу
+          </button>
+        </form>
+
+        <div class="form-tracker__list" id="task-list"></div>
+      </div>
+    </main>
+		</div>
+
+    <aside class="task-drawer" id="task-drawer">
+      <div class="task-drawer__header">
+        <h2 class="task-drawer__title">Task details</h2>
+
+        <button
+          class="task-drawer__close"
+          id="task-drawer-close"
+          type="button"
+          aria-label="Close task details"
+        >
+				 
+			</button>
+      </div>
+
+      <div class="task-drawer__content" id="task-drawer-content"></div>
+    </aside>
+    <script src="js/app.js"></script>
+  </body>
+</html>
