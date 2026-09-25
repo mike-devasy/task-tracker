@@ -1,6 +1,12 @@
 /** @format */
 
-const tasks = []
+let tasks = []
+const savedTasks = localStorage.getItem("tasks")
+if (savedTasks) {
+  tasks = JSON.parse(savedTasks)
+}
+let currentPriorityFilter = "all"
+let currentSidebarFilter = "all"
 const taskTitle = document.getElementById("task-title")
 const taskDescription = document.getElementById("task-description")
 const taskDate = document.getElementById("task-due-date")
@@ -22,40 +28,39 @@ function addTask() {
     status: taskStatus.value,
   }
 }
-
+function saveTasks() {
+  localStorage.setItem("tasks", JSON.stringify(tasks))
+}
 form.addEventListener("submit", function (event) {
   event.preventDefault()
   const task = addTask()
   tasks.push(task)
-  console.log(tasks)
-  renderTasks()
+  saveTasks()
   updateSidebarCounts()
+  applyFilters()
   form.reset()
 })
 function renderTasks(list = tasks) {
   taskList.innerHTML = ""
   list.forEach(function (task) {
-
     const taskItem = document.createElement("div")
     taskItem.classList.add("task-item")
-		taskItem.dataset.id = task.id
-		    const today = getTodayDate()
+    taskItem.dataset.id = task.id
+    const today = getTodayDate()
 
-        const isOverdue =
-          task.dueDate && task.dueDate < today && task.status !== "done"
-        if (isOverdue) {
-          taskItem.classList.add("is-overdue")
-        }
+    const isOverdue =
+      task.dueDate && task.dueDate < today && task.status !== "done"
+    if (isOverdue) {
+      taskItem.classList.add("is-overdue")
+    }
     taskItem.innerHTML = `
 				<h3>${task.title}</h3>
 				<p class="task-item__description">${task.description}</p>
 				<p class="task-item__date">Due Date: ${task.dueDate}</p>
 				<p class="task-item__priority">Priority: ${task.priority}</p>
-				  <select class="task-item__status" data-id="${task.id}">
-    <option value="todo" ${task.status === "todo" ? "selected" : ""}>To do</option>
-    <option value="in_progress" ${task.status === "in_progress" ? "selected" : ""}>In progress</option>
-    <option value="done" ${task.status === "done" ? "selected" : ""}>Done</option>
-  </select>
+				  <span class="task-item__status">
+         ${task.status}
+</span>
 				<button class="task-item__delete" data-id="${task.id}">Delete</button>
 			`
     taskList.appendChild(taskItem)
@@ -65,6 +70,7 @@ function deleteTask(id) {
   const taskIndex = tasks.findIndex((task) => task.id === id)
   if (taskIndex !== -1) {
     tasks.splice(taskIndex, 1)
+    saveTasks()
     applyFilters()
     updateSidebarCounts()
   }
@@ -72,6 +78,8 @@ function deleteTask(id) {
 taskList.addEventListener("click", function (event) {
   if (event.target.classList.contains("task-item__delete")) {
     const taskId = Number(event.target.dataset.id)
+    const isConfirmed = confirm("Удалить эту задачу?")
+    if (!isConfirmed) return
     deleteTask(taskId)
     return
   }
@@ -84,16 +92,9 @@ function changeStatus(id, newStatus) {
   const task = tasks.find((task) => task.id === id)
   if (task) {
     task.status = newStatus
-    applyFilters()
   }
 }
-taskList.addEventListener("change", function (event) {
-  if (!event.target.classList.contains("task-item__status")) return
-  const taskId = Number(event.target.dataset.id)
-  const newStatus = event.target.value
-  changeStatus(taskId, newStatus)
-})
-let currentPriorityFilter = "all"
+ 
 
 taskPriorityFilter.addEventListener("change", function (event) {
   currentPriorityFilter = event.target.value
@@ -110,6 +111,8 @@ function applyFilters() {
 
   renderTasks(filteredTasks)
 }
+updateSidebarCounts()
+applyFilters()
 function openTaskDrawer(id) {
   const task = tasks.find((task) => task.id === id)
   if (!task) return
@@ -129,13 +132,7 @@ function openTaskDrawer(id) {
 
   taskDrawer.classList.add("is-open")
 }
-taskDrawerContent.addEventListener("change", function (event) {
-  if (!event.target.classList.contains("task-item__status")) return
 
-  const taskId = Number(event.target.dataset.id)
-  const newStatus = event.target.value
-  changeStatus(taskId, newStatus)
-})
 taskDrawerContent.addEventListener("click", function (event) {
   if (!event.target.classList.contains("task-item__edit")) return
   const taskId = Number(event.target.dataset.id)
@@ -198,8 +195,8 @@ function openEditMode(task) {
   `
 }
 taskDrawerContent.addEventListener("click", function (event) {
-	if (!event.target.classList.contains("task-drawer__cancel")) return
-	  const taskId = Number(event.target.dataset.id)
+  if (!event.target.classList.contains("task-drawer__cancel")) return
+  const taskId = Number(event.target.dataset.id)
 
   openTaskDrawer(taskId)
 })
@@ -214,9 +211,9 @@ taskDrawerContent.addEventListener("click", function (event) {
   task.dueDate = document.getElementById("edit-date").value
   task.priority = document.getElementById("edit-priority").value
   task.status = document.getElementById("edit-status").value
-  renderTasks()
+  saveTasks()
   updateSidebarCounts()
-	applyFilters()
+  applyFilters()
   taskDrawer.classList.remove("is-open")
 })
 taskDrawerContent.addEventListener("click", function (event) {
@@ -225,11 +222,9 @@ taskDrawerContent.addEventListener("click", function (event) {
   const isConfirmed = confirm("Удалить эту задачу?")
   if (!isConfirmed) return
   deleteTask(taskId)
-  updateSidebarCounts()
-  applyFilters()
+
   taskDrawer.classList.remove("is-open")
 })
-let currentSidebarFilter = "all"
 function filterTasksBySidebar(filter) {
   const today = getTodayDate()
   if (filter === "all") {
@@ -288,5 +283,11 @@ function updateSidebarCounts() {
   ).length
 }
 function getTodayDate() {
-  return new Date().toISOString().split("T")[0]
+  const today = new Date()
+
+  const year = today.getFullYear()
+  const month = String(today.getMonth() + 1).padStart(2, "0")
+  const day = String(today.getDate()).padStart(2, "0")
+
+  return `${year}-${month}-${day}`
 }

@@ -78,6 +78,7 @@ body {
 }
 .form-tracker input,
 .form-tracker select {
+  color: #6b7280;
   padding: 0 12px;
 }
 .form-tracker input,
@@ -130,7 +131,7 @@ body {
 
 .task-item {
   display: grid;
-  grid-template-columns: minmax(180px, 1.6fr) minmax(220px, 2fr) 190px 150px 140px 60px;
+  grid-template-columns: minmax(180px, 1.6fr) minmax(220px, 2fr) 190px 150px 140px 90px;
   gap: 12px;
   align-items: center;
   padding: 18px 10px;
@@ -161,31 +162,21 @@ body {
   word-break: break-word;
 }
 .task-item__status {
-  height: 36px;
   padding: 0 10px;
-  font: inherit;
-  font-size: 13px;
   font-weight: 500;
-  color: #1f2937;
-  background: #ffffff;
-  border: 1px solid #d7dce2;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.task-item__status:focus {
-  outline: none;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+  color: #6b7280;
+  display: flex;
+  align-items: center;
 }
 .task-item__delete {
   height: 36px;
   padding: 0 10px;
   font: inherit;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 500;
   color: #dc2626;
   background: #ffffff;
-  border: 1px solid #d7dce2;
+  border: 2px solid #d7dce2;
   border-radius: 6px;
   cursor: pointer;
   transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
@@ -398,7 +389,6 @@ body {
   border-radius: 8px;
   background: transparent;
   color: rgba(255, 255, 255, 0.78);
-  font: inherit;
   font-size: 14px;
   font-weight: 500;
   text-align: left;
