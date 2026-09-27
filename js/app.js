@@ -94,7 +94,6 @@ function changeStatus(id, newStatus) {
     task.status = newStatus
   }
 }
- 
 
 taskPriorityFilter.addEventListener("change", function (event) {
   currentPriorityFilter = event.target.value
@@ -274,7 +273,6 @@ function updateSidebarCounts() {
   countUpcoming.textContent = tasks.filter(
     (task) => task.dueDate > today && task.status !== "done",
   ).length
-
   countCompleted.textContent = tasks.filter(
     (task) => task.status === "done",
   ).length
@@ -284,10 +282,55 @@ function updateSidebarCounts() {
 }
 function getTodayDate() {
   const today = new Date()
-
   const year = today.getFullYear()
   const month = String(today.getMonth() + 1).padStart(2, "0")
   const day = String(today.getDate()).padStart(2, "0")
-
   return `${year}-${month}-${day}`
 }
+async function loadTasksFromApi() {
+  try {
+    const response = await fetch("api/tasks.php")
+    if (!response.ok) {
+      throw new Error(`HTTP error: ${response.status}`)
+    }
+    const data = await response.json()
+    tasks = data
+    applyFilters()
+    updateSidebarCounts()
+  } catch (error) {
+    console.error("Failed to load tasks:", error)
+  }
+}
+loadTasksFromApi()
+async function createTaskOnServer(task) {
+  console.log("POST function started", task)
+  try {
+    const response = await fetch("api/tasks.php", {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json",
+      },
+
+      body: JSON.stringify(task),
+    })
+    console.log("POST response:", response)
+    if (!response.ok) {
+      throw new Error(`HTTP error: ${response.status}`)
+    }
+
+    const data = await response.json()
+
+    console.log(data)
+  } catch (error) {
+    console.error("Failed to create task:", error)
+  }
+}
+createTaskOnServer({
+  id: Date.now(),
+  title: "My first POST task",
+  description: "Sent from JavaScript",
+  dueDate: "2026-09-30",
+  priority: "high",
+  status: "todo",
+})
