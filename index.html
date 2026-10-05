@@ -1,130 +1,209 @@
 <!-- @format -->
 <!doctype html>
-<html lang="ru">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Task Tracker</title>
+    <meta
+      name="description"
+      content="A focused task management workspace for planning and tracking work."
+    />
+    <title>Tasker — Task Tracker</title>
     <link rel="stylesheet" href="css/style.css" />
   </head>
   <body>
-		<div class="app">
-<aside class="app-sidebar">
-  <h2 class="app-sidebar__logo">Tasker</h2>
+    <div class="app">
+      <aside class="app-sidebar" aria-label="Task filters">
+        <a class="app-sidebar__brand" href="#main-content" aria-label="Tasker home">
+          <span class="app-sidebar__brand-mark" aria-hidden="true">T</span>
+          <span>Tasker</span>
+        </a>
 
-  <nav class="app-sidebar__nav">
-    <button type="button" class="app-sidebar__item is-active" data-filter="all">
-      <span>All tasks</span>
-      <span class="app-sidebar__count" id="count-all">0</span>
-    </button>
+        <p class="app-sidebar__label">Workspace</p>
 
-    <button type="button" class="app-sidebar__item" data-filter="today">
-      <span>Today</span>
-      <span class="app-sidebar__count" id="count-today">0</span>
-    </button>
-
-    <button type="button" class="app-sidebar__item" data-filter="upcoming">
-      <span>Upcoming</span>
-      <span class="app-sidebar__count" id="count-upcoming">0</span>
-    </button>
-
-    <button type="button" class="app-sidebar__item" data-filter="completed">
-      <span>Completed</span>
-      <span class="app-sidebar__count" id="count-completed">0</span>
-    </button>
-		<button
-  type="button"
-  class="app-sidebar__item"
-  data-filter="overdue"
->
-  <span>Overdue</span>
-  <span class="app-sidebar__count" id="count-overdue">0</span>
-</button>
-  </nav>
-</aside>
-    <main class="tracker">
-      <div class="tracker__container">
-        <h1 class="tracker__title">Task Tracker</h1>
-        <div class="tracker__filter-block">
-          <h3>Фильтр по приоритету</h3>
-        </div>
-        <select class="tracker__filter" id="task-priority-filter">
-          <option value="all">All</option>
-          <option value="low">Low</option>
-          <option value="medium" selected>Medium</option>
-          <option value="high">High</option>
-        </select>
-        <form class="tracker__form form-tracker" id="task-form">
-          <input
-            class="form-tracker__input"
-            id="task-title"
-            type="text"
-            placeholder="Название задачи"
-            required
-          />
-
-          <textarea
-            class="form-tracker__description"
-            id="task-description"
-            placeholder="Описание"
-          ></textarea>
-
-          <select class="form-tracker__select" id="task-status">
-            <option class="task-item__status" data-id="${task.id}" value="todo">
-              To do
-            </option>
-            <option
-              class="task-item__status"
-              data-id="${task.id}"
-              value="in_progress"
-            >
-              In progress
-            </option>
-            <option class="task-item__status" data-id="${task.id}" value="done">
-              Done
-            </option>
-          </select>
-
-          <select class="form-tracker__select" id="task-priority">
-            <option value="low">
-              <span class="priority priority--low">Low</span>
-            </option>
-            <option value="medium" selected>
-              <span class="priority priority--medium">Medium</span>
-            </option>
-            <option value="high">
-              <span class="priority priority--high">High</span>
-            </option>
-          </select>
-
-          <input class="form-tracker__date" id="task-due-date" type="date" />
-
-          <button class="form-tracker__button" type="submit">
-            Добавить задачу
+        <nav class="app-sidebar__nav" aria-label="Filter tasks by date and status">
+          <button
+            type="button"
+            class="app-sidebar__item is-active"
+            data-filter="all"
+          >
+            <span>All tasks</span>
+            <span class="app-sidebar__count" id="count-all">0</span>
           </button>
-        </form>
 
-        <div class="form-tracker__list" id="task-list"></div>
-      </div>
-    </main>
-		</div>
+          <button type="button" class="app-sidebar__item" data-filter="today">
+            <span>Today</span>
+            <span class="app-sidebar__count" id="count-today">0</span>
+          </button>
 
-    <aside class="task-drawer" id="task-drawer">
+          <button
+            type="button"
+            class="app-sidebar__item"
+            data-filter="upcoming"
+          >
+            <span>Upcoming</span>
+            <span class="app-sidebar__count" id="count-upcoming">0</span>
+          </button>
+
+          <button
+            type="button"
+            class="app-sidebar__item"
+            data-filter="completed"
+          >
+            <span>Completed</span>
+            <span class="app-sidebar__count" id="count-completed">0</span>
+          </button>
+
+          <button type="button" class="app-sidebar__item" data-filter="overdue">
+            <span>Overdue</span>
+            <span class="app-sidebar__count" id="count-overdue">0</span>
+          </button>
+        </nav>
+
+        <div class="app-sidebar__footer">
+          <span class="app-sidebar__footer-dot" aria-hidden="true"></span>
+          Personal workspace
+        </div>
+      </aside>
+
+      <main class="tracker" id="main-content">
+        <div class="tracker__container">
+          <header class="page-header">
+            <div>
+              <p class="page-header__eyebrow">My workspace</p>
+              <h1 class="page-header__title">Tasks</h1>
+              <p class="page-header__subtitle">
+                Plan your work and keep every deadline visible.
+              </p>
+            </div>
+
+            <button class="button button--primary" id="new-task-button" type="button">
+              <span aria-hidden="true">+</span>
+              New task
+            </button>
+          </header>
+
+          <section class="toolbar" aria-label="Task list controls">
+            <div class="toolbar__group">
+              <label class="toolbar__label" for="task-priority-filter">Priority</label>
+              <select class="toolbar__control" id="task-priority-filter">
+                <option value="all" selected>All priorities</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+
+            <div class="toolbar__filters">
+              <label class="toolbar__group">
+                <span class="toolbar__label">Search</span>
+                <input
+                  class="toolbar__control toolbar__search"
+                  id="task-search"
+                  type="search"
+                  placeholder="Search tasks"
+                  autocomplete="off"
+                  aria-label="Search tasks by title or description"
+                />
+              </label>
+
+              <label class="toolbar__group">
+                <span class="toolbar__label">Sort</span>
+                <select class="toolbar__control" id="task-sort" aria-label="Sort tasks">
+                  <option value="newest" selected>Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="due-asc">Due date: earliest</option>
+                  <option value="due-desc">Due date: latest</option>
+                  <option value="priority">Priority: high to low</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section class="tasks-panel" aria-labelledby="task-list-heading">
+            <div class="tasks-panel__header">
+              <div>
+                <h2 class="tasks-panel__title" id="task-list-heading" tabindex="-1">
+                  Your tasks
+                </h2>
+                <p class="tasks-panel__summary" id="visible-task-count">0 tasks</p>
+              </div>
+            </div>
+
+            <div class="task-list-header" id="task-list-header" aria-hidden="true">
+              <span>Task</span>
+              <span>Due date</span>
+              <span>Priority</span>
+              <span>Status</span>
+              <span>Actions</span>
+            </div>
+
+            <div class="task-list" id="task-list" role="list" aria-busy="true"></div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <button
+      class="drawer-overlay"
+      id="task-drawer-overlay"
+      type="button"
+      aria-label="Close task panel"
+      tabindex="-1"
+    ></button>
+
+    <aside
+      class="task-drawer"
+      id="task-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-hidden="true"
+      aria-labelledby="task-drawer-title"
+    >
       <div class="task-drawer__header">
-        <h2 class="task-drawer__title">Task details</h2>
+        <div>
+          <p class="task-drawer__eyebrow">Task workspace</p>
+          <h2 class="task-drawer__title" id="task-drawer-title">Task details</h2>
+        </div>
 
         <button
-          class="task-drawer__close"
+          class="icon-button task-drawer__close"
           id="task-drawer-close"
           type="button"
-          aria-label="Close task details"
-        >
-				 
-			</button>
+          aria-label="Close task panel"
+        ></button>
       </div>
 
       <div class="task-drawer__content" id="task-drawer-content"></div>
     </aside>
-    <script src="js/app.js"></script>
+
+    <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+
+    <div class="confirm-overlay" id="delete-confirm-overlay" hidden>
+      <section
+        class="confirm-dialog"
+        id="delete-confirm-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-confirm-title"
+        aria-describedby="delete-confirm-description"
+      >
+        <div class="confirm-dialog__icon" aria-hidden="true">!</div>
+        <h2 id="delete-confirm-title">Delete task?</h2>
+        <p id="delete-confirm-description">
+          This task will be permanently removed from your workspace.
+        </p>
+        <div class="confirm-dialog__actions">
+          <button class="button button--secondary" id="delete-confirm-cancel" type="button">
+            Cancel
+          </button>
+          <button class="button button--danger" id="delete-confirm-submit" type="button">
+            Delete task
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <script src="js/app.js?v=20261005-4"></script>
   </body>
 </html>

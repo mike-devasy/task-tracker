@@ -1,238 +1,794 @@
 /** @format */
 
+const API_URL = "api/tasks.php"
+
 let tasks = []
-const savedTasks = localStorage.getItem("tasks")
-if (savedTasks) {
-  tasks = JSON.parse(savedTasks)
-}
 let currentPriorityFilter = "all"
 let currentSidebarFilter = "all"
-const taskTitle = document.getElementById("task-title")
-const taskDescription = document.getElementById("task-description")
-const taskDate = document.getElementById("task-due-date")
-const taskStatus = document.getElementById("task-status")
-const taskPriority = document.getElementById("task-priority")
-const form = document.getElementById("task-form")
+let currentSearchQuery = ""
+let currentSort = "newest"
+let lastFocusedElement = null
+let pendingDeleteId = null
+let closeDrawerAfterDelete = false
+let confirmLastFocusedElement = null
+let toastTimer = null
+
 const taskList = document.getElementById("task-list")
+const taskListHeader = document.getElementById("task-list-header")
+const taskListHeading = document.getElementById("task-list-heading")
+const visibleTaskCount = document.getElementById("visible-task-count")
+const tasksPanel = document.querySelector(".tasks-panel")
 const taskPriorityFilter = document.getElementById("task-priority-filter")
+const taskSearch = document.getElementById("task-search")
+const taskSort = document.getElementById("task-sort")
+const appSidebar = document.querySelector(".app-sidebar")
+const newTaskButton = document.getElementById("new-task-button")
 const taskDrawer = document.getElementById("task-drawer")
+const taskDrawerTitle = document.getElementById("task-drawer-title")
 const taskDrawerContent = document.getElementById("task-drawer-content")
 const taskDrawerClose = document.getElementById("task-drawer-close")
-function addTask() {
+const taskDrawerOverlay = document.getElementById("task-drawer-overlay")
+const toastRegion = document.getElementById("toast-region")
+const deleteConfirmOverlay = document.getElementById("delete-confirm-overlay")
+const deleteConfirmDialog = document.getElementById("delete-confirm-dialog")
+const deleteConfirmDescription = document.getElementById("delete-confirm-description")
+const deleteConfirmCancel = document.getElementById("delete-confirm-cancel")
+const deleteConfirmSubmit = document.getElementById("delete-confirm-submit")
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;")
+}
+
+function formatDate(dateValue) {
+  if (!dateValue) return "No date"
+
+  const [year, month, day] = dateValue.split("-").map(Number)
+  const date = new Date(year, month - 1, day)
+
+  if (Number.isNaN(date.getTime())) return dateValue
+
+  return new Intl.DateTimeFormat("en", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date)
+}
+
+function formatStatus(status) {
+  const labels = {
+    todo: "To do",
+    in_progress: "In progress",
+    done: "Done",
+  }
+
+  return labels[status] || status
+}
+
+function formatPriority(priority) {
+  return priority.charAt(0).toUpperCase() + priority.slice(1)
+}
+
+function getTaskFromForm(form) {
   return {
-    id: Date.now(),
-    title: taskTitle.value.trim(),
-    description: taskDescription.value.trim(),
-    dueDate: taskDate.value,
-    priority: taskPriority.value,
-    status: taskStatus.value,
+    title: form.querySelector('[name="title"]').value.trim(),
+    description: form.querySelector('[name="description"]').value.trim(),
+    dueDate: form.querySelector('[name="dueDate"]').value,
+    priority: form.querySelector('[name="priority"]').value,
+    status: form.querySelector('[name="status"]').value,
   }
 }
-function saveTasks() {
-  localStorage.setItem("tasks", JSON.stringify(tasks))
-}
-form.addEventListener("submit", function (event) {
-  event.preventDefault()
-  const task = addTask()
-  tasks.push(task)
-  saveTasks()
-  updateSidebarCounts()
-  applyFilters()
-  form.reset()
-})
-function renderTasks(list = tasks) {
-  taskList.innerHTML = ""
-  list.forEach(function (task) {
-    const taskItem = document.createElement("div")
-    taskItem.classList.add("task-item")
-    taskItem.dataset.id = task.id
-    const today = getTodayDate()
 
+function renderInitialLoadingState() {
+  taskListHeader.hidden = true
+  taskList.setAttribute("aria-busy", "true")
+  visibleTaskCount.textContent = "Loading tasks…"
+  taskList.innerHTML = `
+    <div class="loading-state" role="status">
+      <span class="visually-hidden">Loading tasks</span>
+      ${Array.from(
+        { length: 3 },
+        () => `
+          <span class="loading-row" aria-hidden="true">
+            <span class="loading-row__primary"></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+        `,
+      ).join("")}
+    </div>
+  `
+}
+
+function renderLoadError() {
+  taskListHeader.hidden = true
+  taskList.setAttribute("aria-busy", "false")
+  visibleTaskCount.textContent = "Tasks unavailable"
+  taskList.innerHTML = `
+    <div class="empty-state empty-state--error">
+      <span class="empty-state__icon" aria-hidden="true">!</span>
+      <h3>Could not load tasks</h3>
+      <p>Check your connection and try again.</p>
+      <button class="button button--secondary empty-state__retry" type="button">
+        Try again
+      </button>
+    </div>
+  `
+}
+
+function renderTasks(list = tasks, { animate = true } = {}) {
+  taskList.innerHTML = ""
+  taskList.classList.toggle("is-entering", animate)
+  taskList.setAttribute("aria-busy", "false")
+  taskListHeader.hidden = list.length === 0
+  const hasActiveFilters =
+    currentSidebarFilter !== "all" ||
+    currentPriorityFilter !== "all" ||
+    currentSearchQuery !== ""
+  visibleTaskCount.textContent = hasActiveFilters
+    ? `${list.length} of ${tasks.length} tasks`
+    : `${list.length} ${list.length === 1 ? "task" : "tasks"}`
+
+  if (list.length === 0) {
+    const isWorkspaceEmpty = tasks.length === 0
+    const hasSearchQuery = currentSearchQuery !== ""
+
+    taskList.innerHTML = `
+      <div class="empty-state">
+        <span class="empty-state__icon" aria-hidden="true">✓</span>
+        <h3>${
+          isWorkspaceEmpty
+            ? "Start with your first task"
+            : hasSearchQuery
+              ? "No matching tasks"
+              : "No tasks in this view"
+        }</h3>
+        <p>
+          ${
+            isWorkspaceEmpty
+              ? "Create a task to begin planning your workspace."
+              : hasSearchQuery
+                ? "Try a different search term or clear the active filters."
+                : "Try another sidebar or priority filter."
+          }
+        </p>
+        ${
+          isWorkspaceEmpty
+            ? '<button class="button button--secondary empty-state__action" type="button">Create task</button>'
+            : '<button class="button button--secondary empty-state__clear" type="button">Clear filters</button>'
+        }
+      </div>
+    `
+    return
+  }
+
+  const today = getTodayDate()
+
+  list.forEach(function (task) {
+    const taskItem = document.createElement("article")
     const isOverdue =
       task.dueDate && task.dueDate < today && task.status !== "done"
-    if (isOverdue) {
-      taskItem.classList.add("is-overdue")
-    }
+
+    taskItem.className = "task-item"
+    taskItem.dataset.id = task.id
+    taskItem.setAttribute("role", "listitem")
+    taskItem.tabIndex = 0
+
+    if (isOverdue) taskItem.classList.add("is-overdue")
+    if (task.status === "done") taskItem.classList.add("is-completed")
+
     taskItem.innerHTML = `
-				<h3>${task.title}</h3>
-				<p class="task-item__description">${task.description}</p>
-				<p class="task-item__date">Due Date: ${task.dueDate}</p>
-				<p class="task-item__priority">Priority: ${task.priority}</p>
-				  <span class="task-item__status">
-         ${task.status}
-</span>
-				<button class="task-item__delete" data-id="${task.id}">Delete</button>
-			`
+      <div class="task-item__primary">
+        <h3>${escapeHtml(task.title)}</h3>
+        <p class="task-item__description">
+          ${escapeHtml(task.description || "No description")}
+        </p>
+      </div>
+
+      <div class="task-item__meta task-item__date" data-label="Due date">
+        ${escapeHtml(formatDate(task.dueDate))}
+      </div>
+
+      <div class="task-item__meta" data-label="Priority">
+        <span class="badge badge--priority-${escapeHtml(task.priority)}">
+          ${escapeHtml(formatPriority(task.priority))}
+        </span>
+      </div>
+
+      <div class="task-item__meta" data-label="Status">
+        <span class="badge badge--status-${escapeHtml(task.status)}">
+          ${escapeHtml(formatStatus(task.status))}
+        </span>
+      </div>
+
+      <div class="task-item__actions">
+        <button
+          class="button-link task-item__view"
+          data-id="${task.id}"
+          type="button"
+          aria-label="View ${escapeHtml(task.title)} details"
+        >
+          View
+        </button>
+        <button
+          class="button-link button-link--danger task-item__delete"
+          data-id="${task.id}"
+          type="button"
+          aria-label="Delete ${escapeHtml(task.title)}"
+        >
+          Delete
+        </button>
+      </div>
+    `
+
     taskList.appendChild(taskItem)
   })
 }
-function deleteTask(id) {
-  const taskIndex = tasks.findIndex((task) => task.id === id)
-  if (taskIndex !== -1) {
-    tasks.splice(taskIndex, 1)
-    saveTasks()
-    applyFilters()
-    updateSidebarCounts()
+
+function setOperationLoading(isLoading) {
+  tasksPanel.classList.toggle("is-loading", isLoading)
+  tasksPanel.setAttribute("aria-busy", String(isLoading))
+  taskList.setAttribute("aria-busy", String(isLoading))
+}
+
+function setFormSubmitting(form, isSubmitting, loadingLabel) {
+  const submitButton = form.querySelector('button[type="submit"]')
+  if (!submitButton) return
+
+  if (isSubmitting) {
+    submitButton.dataset.defaultLabel = submitButton.textContent
+    submitButton.textContent = loadingLabel
+  } else if (submitButton.dataset.defaultLabel) {
+    submitButton.textContent = submitButton.dataset.defaultLabel
+    delete submitButton.dataset.defaultLabel
+  }
+
+  submitButton.disabled = isSubmitting
+}
+
+function showToast(message, type = "error") {
+  window.clearTimeout(toastTimer)
+  toastRegion.innerHTML = ""
+
+  const toast = document.createElement("div")
+  toast.className = `toast toast--${type}`
+  toast.setAttribute("role", type === "error" ? "alert" : "status")
+
+  const text = document.createElement("span")
+  text.textContent = message
+
+  const closeButton = document.createElement("button")
+  closeButton.className = "toast__close"
+  closeButton.type = "button"
+  closeButton.setAttribute("aria-label", "Dismiss notification")
+  closeButton.textContent = "×"
+  closeButton.addEventListener("click", () => toast.remove())
+
+  toast.append(text, closeButton)
+  toastRegion.appendChild(toast)
+  requestAnimationFrame(() => toast.classList.add("is-visible"))
+
+  toastTimer = window.setTimeout(() => toast.remove(), 4500)
+}
+
+function getFocusableElements(container) {
+  return Array.from(
+    container.querySelectorAll(
+      'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => !element.hidden)
+}
+
+function trapFocus(event, container) {
+  if (event.key !== "Tab") return
+
+  const focusableElements = getFocusableElements(container)
+  if (focusableElements.length === 0) return
+
+  const firstElement = focusableElements[0]
+  const lastElement = focusableElements[focusableElements.length - 1]
+
+  if (event.shiftKey && document.activeElement === firstElement) {
+    event.preventDefault()
+    lastElement.focus()
+  } else if (!event.shiftKey && document.activeElement === lastElement) {
+    event.preventDefault()
+    firstElement.focus()
   }
 }
+
+function openDeleteConfirm(id, { closeDrawerOnSuccess = false } = {}) {
+  const task = tasks.find((item) => item.id === id)
+  if (!task) return
+
+  pendingDeleteId = id
+  closeDrawerAfterDelete = closeDrawerOnSuccess
+  confirmLastFocusedElement = document.activeElement
+  deleteConfirmDescription.textContent = `“${task.title}” will be permanently removed from your workspace.`
+  deleteConfirmOverlay.hidden = false
+  document.body.classList.add("confirm-open")
+
+  if (taskDrawer.classList.contains("is-open")) {
+    taskDrawer.setAttribute("aria-hidden", "true")
+  }
+
+  requestAnimationFrame(() => {
+    deleteConfirmOverlay.classList.add("is-visible")
+    deleteConfirmCancel.focus()
+  })
+}
+
+function closeDeleteConfirm({ restoreFocus = true } = {}) {
+  deleteConfirmOverlay.classList.remove("is-visible")
+  deleteConfirmOverlay.hidden = true
+  document.body.classList.remove("confirm-open")
+  pendingDeleteId = null
+  closeDrawerAfterDelete = false
+
+  if (taskDrawer.classList.contains("is-open")) {
+    taskDrawer.setAttribute("aria-hidden", "false")
+  }
+
+  if (
+    restoreFocus &&
+    confirmLastFocusedElement &&
+    document.contains(confirmLastFocusedElement)
+  ) {
+    confirmLastFocusedElement.focus()
+  }
+
+  confirmLastFocusedElement = null
+}
+
+function openDrawer(title) {
+  if (!taskDrawer.classList.contains("is-open")) {
+    lastFocusedElement = document.activeElement
+  }
+  taskDrawerTitle.textContent = title
+  taskDrawer.classList.add("is-open")
+  taskDrawerOverlay.classList.add("is-visible")
+  taskDrawer.setAttribute("aria-hidden", "false")
+  document.body.classList.add("drawer-open")
+
+  requestAnimationFrame(() => {
+    const firstField = taskDrawerContent.querySelector("input, textarea, select")
+    ;(firstField || taskDrawerClose).focus()
+  })
+}
+
+function closeDrawer() {
+  taskDrawer.classList.remove("is-open")
+  taskDrawerOverlay.classList.remove("is-visible")
+  taskDrawer.setAttribute("aria-hidden", "true")
+  document.body.classList.remove("drawer-open")
+  taskDrawerContent.innerHTML = ""
+
+  const focusTarget =
+    lastFocusedElement && document.contains(lastFocusedElement)
+      ? lastFocusedElement
+      : taskListHeading
+  focusTarget.focus()
+  lastFocusedElement = null
+}
+
+function openCreateMode() {
+  taskDrawerContent.innerHTML = `
+    <form class="drawer-form" id="task-form">
+      <p class="drawer-form__intro">
+        Add the essentials now. You can refine the task later.
+      </p>
+
+      <label class="field">
+        <span class="field__label">Title <span aria-hidden="true">*</span></span>
+        <input
+          class="field__control"
+          name="title"
+          type="text"
+          placeholder="What needs to be done?"
+          required
+        />
+      </label>
+
+      <label class="field">
+        <span class="field__label">Description</span>
+        <textarea
+          class="field__control field__control--textarea"
+          name="description"
+          placeholder="Add context or next steps"
+        ></textarea>
+      </label>
+
+      <div class="drawer-form__grid">
+        <label class="field">
+          <span class="field__label">Due date</span>
+          <input class="field__control" name="dueDate" type="date" />
+        </label>
+
+        <label class="field">
+          <span class="field__label">Priority</span>
+          <select class="field__control" name="priority">
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="field">
+        <span class="field__label">Status</span>
+        <select class="field__control" name="status">
+          <option value="todo" selected>To do</option>
+          <option value="in_progress">In progress</option>
+          <option value="done">Done</option>
+        </select>
+      </label>
+
+      <div class="task-drawer__actions">
+        <button class="button button--secondary task-drawer__cancel-create" type="button">
+          Cancel
+        </button>
+        <button class="button button--primary" type="submit">Create task</button>
+      </div>
+    </form>
+  `
+
+  openDrawer("Create task")
+}
+
+function openTaskDrawer(id) {
+  const task = tasks.find((item) => item.id === id)
+  if (!task) return
+
+  taskDrawerContent.innerHTML = `
+    <article class="task-details">
+      <div class="task-details__heading">
+        <h3>${escapeHtml(task.title)}</h3>
+        <span class="badge badge--status-${escapeHtml(task.status)}">
+          ${escapeHtml(formatStatus(task.status))}
+        </span>
+      </div>
+
+      <section class="task-details__section" aria-labelledby="description-label">
+        <h4 id="description-label">Description</h4>
+        <p>${escapeHtml(task.description || "No description provided.")}</p>
+      </section>
+
+      <dl class="task-details__grid">
+        <div>
+          <dt>Due date</dt>
+          <dd class="${
+            task.dueDate && task.dueDate < getTodayDate() && task.status !== "done"
+              ? "is-overdue"
+              : ""
+          }">${escapeHtml(formatDate(task.dueDate))}</dd>
+        </div>
+        <div>
+          <dt>Priority</dt>
+          <dd>
+            <span class="badge badge--priority-${escapeHtml(task.priority)}">
+              ${escapeHtml(formatPriority(task.priority))}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>
+            <span class="badge badge--status-${escapeHtml(task.status)}">
+              ${escapeHtml(formatStatus(task.status))}
+            </span>
+          </dd>
+        </div>
+      </dl>
+
+      <div class="task-drawer__actions">
+        <button
+          class="button button--secondary task-item__edit"
+          data-id="${task.id}"
+          type="button"
+          aria-label="Edit ${escapeHtml(task.title)}"
+        >
+          Edit
+        </button>
+        <button
+          class="button button--danger task-item__delete"
+          data-id="${task.id}"
+          type="button"
+          aria-label="Delete ${escapeHtml(task.title)}"
+        >
+          Delete
+        </button>
+      </div>
+    </article>
+  `
+
+  openDrawer("Task details")
+}
+
+function openEditMode(task) {
+  taskDrawerContent.innerHTML = `
+    <form class="drawer-form" id="edit-task-form" data-id="${task.id}">
+      <label class="field">
+        <span class="field__label">Title <span aria-hidden="true">*</span></span>
+        <input
+          class="field__control"
+          name="title"
+          type="text"
+          value="${escapeHtml(task.title)}"
+          required
+        />
+      </label>
+
+      <label class="field">
+        <span class="field__label">Description</span>
+        <textarea class="field__control field__control--textarea" name="description">${escapeHtml(
+          task.description,
+        )}</textarea>
+      </label>
+
+      <div class="drawer-form__grid">
+        <label class="field">
+          <span class="field__label">Due date</span>
+          <input
+            class="field__control"
+            name="dueDate"
+            type="date"
+            value="${escapeHtml(task.dueDate)}"
+          />
+        </label>
+
+        <label class="field">
+          <span class="field__label">Priority</span>
+          <select class="field__control" name="priority">
+            <option value="low" ${task.priority === "low" ? "selected" : ""}>Low</option>
+            <option value="medium" ${task.priority === "medium" ? "selected" : ""}>Medium</option>
+            <option value="high" ${task.priority === "high" ? "selected" : ""}>High</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="field">
+        <span class="field__label">Status</span>
+        <select class="field__control" name="status">
+          <option value="todo" ${task.status === "todo" ? "selected" : ""}>To do</option>
+          <option value="in_progress" ${task.status === "in_progress" ? "selected" : ""}>In progress</option>
+          <option value="done" ${task.status === "done" ? "selected" : ""}>Done</option>
+        </select>
+      </label>
+
+      <div class="task-drawer__actions">
+        <button
+          class="button button--secondary task-drawer__cancel"
+          data-id="${task.id}"
+          type="button"
+        >
+          Cancel
+        </button>
+        <button class="button button--primary" type="submit">Save changes</button>
+      </div>
+    </form>
+  `
+
+  taskDrawerTitle.textContent = "Edit task"
+  requestAnimationFrame(() => taskDrawerContent.querySelector('[name="title"]').focus())
+}
+
+async function deleteTask(id) {
+  await apiRequest(`${API_URL}?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  })
+  await loadTasksFromApi()
+}
+
+async function createTask(form) {
+  setFormSubmitting(form, true, "Creating…")
+  setOperationLoading(true)
+
+  try {
+    await apiRequest(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(getTaskFromForm(form)),
+    })
+    await loadTasksFromApi()
+    closeDrawer()
+    showToast("Task created.", "success")
+  } catch (error) {
+    reportApiError("Could not create the task.", error)
+  } finally {
+    setOperationLoading(false)
+    if (form.isConnected) setFormSubmitting(form, false)
+  }
+}
+
+async function updateTask(form) {
+  const taskId = Number(form.dataset.id)
+  setFormSubmitting(form, true, "Saving…")
+  setOperationLoading(true)
+
+  try {
+    await apiRequest(`${API_URL}?id=${encodeURIComponent(taskId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(getTaskFromForm(form)),
+    })
+    await loadTasksFromApi()
+    closeDrawer()
+    showToast("Task updated.", "success")
+  } catch (error) {
+    reportApiError("Could not save the task.", error)
+  } finally {
+    setOperationLoading(false)
+    if (form.isConnected) setFormSubmitting(form, false)
+  }
+}
+
 taskList.addEventListener("click", function (event) {
-  if (event.target.classList.contains("task-item__delete")) {
-    const taskId = Number(event.target.dataset.id)
-    const isConfirmed = confirm("Удалить эту задачу?")
-    if (!isConfirmed) return
-    deleteTask(taskId)
+  if (event.target.closest(".empty-state__retry")) {
+    loadTasksFromApi({ showLoading: true }).catch(handleLoadError)
     return
   }
+
+  if (event.target.closest(".empty-state__action")) {
+    openCreateMode()
+    return
+  }
+
+  if (event.target.closest(".empty-state__clear")) {
+    resetTaskFilters()
+    return
+  }
+
+  const deleteButton = event.target.closest(".task-item__delete")
+  if (deleteButton) {
+    const taskId = Number(deleteButton.dataset.id)
+    openDeleteConfirm(taskId)
+    return
+  }
+
   const taskItem = event.target.closest(".task-item")
   if (!taskItem) return
-  const taskId = Number(taskItem.dataset.id)
-  openTaskDrawer(taskId)
+  openTaskDrawer(Number(taskItem.dataset.id))
 })
-function changeStatus(id, newStatus) {
-  const task = tasks.find((task) => task.id === id)
-  if (task) {
-    task.status = newStatus
+
+taskList.addEventListener("keydown", function (event) {
+  if (event.target !== event.target.closest(".task-item")) return
+  if (event.key !== "Enter" && event.key !== " ") return
+
+  event.preventDefault()
+  openTaskDrawer(Number(event.target.dataset.id))
+})
+
+taskDrawerContent.addEventListener("submit", function (event) {
+  event.preventDefault()
+
+  if (event.target.id === "task-form") {
+    createTask(event.target)
   }
-}
+
+  if (event.target.id === "edit-task-form") {
+    updateTask(event.target)
+  }
+})
+
+taskDrawerContent.addEventListener("click", function (event) {
+  const editButton = event.target.closest(".task-item__edit")
+  if (editButton) {
+    const task = tasks.find((item) => item.id === Number(editButton.dataset.id))
+    if (task) openEditMode(task)
+    return
+  }
+
+  const cancelEditButton = event.target.closest(".task-drawer__cancel")
+  if (cancelEditButton) {
+    openTaskDrawer(Number(cancelEditButton.dataset.id))
+    return
+  }
+
+  if (event.target.closest(".task-drawer__cancel-create")) {
+    closeDrawer()
+    return
+  }
+
+  const deleteButton = event.target.closest(".task-item__delete")
+  if (!deleteButton) return
+
+  const taskId = Number(deleteButton.dataset.id)
+  openDeleteConfirm(taskId, { closeDrawerOnSuccess: true })
+})
 
 taskPriorityFilter.addEventListener("change", function (event) {
   currentPriorityFilter = event.target.value
   applyFilters()
 })
-function applyFilters() {
-  let filteredTasks = filterTasksBySidebar(currentSidebarFilter)
 
-  if (currentPriorityFilter !== "all") {
-    filteredTasks = filteredTasks.filter(
-      (task) => task.priority === currentPriorityFilter,
-    )
-  }
-
-  renderTasks(filteredTasks)
-}
-updateSidebarCounts()
-applyFilters()
-function openTaskDrawer(id) {
-  const task = tasks.find((task) => task.id === id)
-  if (!task) return
-  taskDrawerContent.innerHTML = `
-	<h3>${task.title}</h3>
-				<p class="task-item__description">${task.description}</p>
-				<p>Due Date:<br> ${task.dueDate}</p>
-				<p>Priority:<br> ${task.priority}</p>
-				<p>Status</p>
- 
-	<p class="task-item__status">${task.status}</p>
-	<div class="task-drawer__actions">
-		<button class="task-item__edit" data-id="${task.id}">Edit</button>
-		<button class="task-item__delete task-item__delete--drawer" data-id="${task.id}">Delete</button>
-		</div>
-				`
-
-  taskDrawer.classList.add("is-open")
-}
-
-taskDrawerContent.addEventListener("click", function (event) {
-  if (!event.target.classList.contains("task-item__edit")) return
-  const taskId = Number(event.target.dataset.id)
-  const task = tasks.find((task) => task.id === taskId)
-  if (!task) return
-  openEditMode(task)
+taskSearch.addEventListener("input", function (event) {
+  currentSearchQuery = event.target.value.trim().toLocaleLowerCase()
+  applyFilters({ animate: false })
 })
-taskDrawerClose.addEventListener("click", function (event) {
-  taskDrawer.classList.remove("is-open")
-})
-document.addEventListener("keydown", function (event) {
-  if (event.key === "Escape") {
-    taskDrawer.classList.remove("is-open")
-  }
-})
-function openEditMode(task) {
-  taskDrawerContent.innerHTML = `
-    <h2>Edit task</h2>
-    <input
-      class="task-drawer__input"
-      id="edit-title"
-      type="text"
-      value="${task.title}"
-    >
-    <textarea
-      class="task-drawer__textarea"
-      id="edit-description"
-    >${task.description}</textarea>
-    <input
-      id="edit-date"
-      type="date"
-      value="${task.dueDate}"
-    >
-    <select id="edit-priority">
-      <option value="low" ${task.priority === "low" ? "selected" : ""}>Low</option>
-      <option value="medium" ${task.priority === "medium" ? "selected" : ""}>Medium</option>
-      <option value="high" ${task.priority === "high" ? "selected" : ""}>High</option>
-    </select>
-    <select id="edit-status">
-      <option value="todo" ${task.status === "todo" ? "selected" : ""}>To do</option>
-      <option value="in_progress" ${task.status === "in_progress" ? "selected" : ""}>In progress</option>
-      <option value="done" ${task.status === "done" ? "selected" : ""}>Done</option>
-    </select>
-	<div class="task-drawer__actions">
-    <button
-      class="task-drawer__save"
-      data-id="${task.id}"
-      type="button"
-    >
-      Save
-    </button>
-    <button
-      class="task-drawer__cancel"
-      data-id="${task.id}"
-      type="button"
-    >
-      Cancel
-    </button>
-		</div>
-  `
-}
-taskDrawerContent.addEventListener("click", function (event) {
-  if (!event.target.classList.contains("task-drawer__cancel")) return
-  const taskId = Number(event.target.dataset.id)
 
-  openTaskDrawer(taskId)
-})
-taskDrawerContent.addEventListener("click", function (event) {
-  if (!event.target.classList.contains("task-drawer__save")) return
-
-  const taskId = Number(event.target.dataset.id)
-  const task = tasks.find((task) => task.id === taskId)
-  if (!task) return
-  task.title = document.getElementById("edit-title").value.trim()
-  task.description = document.getElementById("edit-description").value.trim()
-  task.dueDate = document.getElementById("edit-date").value
-  task.priority = document.getElementById("edit-priority").value
-  task.status = document.getElementById("edit-status").value
-  saveTasks()
-  updateSidebarCounts()
+taskSort.addEventListener("change", function (event) {
+  currentSort = event.target.value
   applyFilters()
-  taskDrawer.classList.remove("is-open")
 })
-taskDrawerContent.addEventListener("click", function (event) {
-  if (!event.target.classList.contains("task-item__delete")) return
-  const taskId = Number(event.target.dataset.id)
-  const isConfirmed = confirm("Удалить эту задачу?")
-  if (!isConfirmed) return
-  deleteTask(taskId)
 
-  taskDrawer.classList.remove("is-open")
+appSidebar.addEventListener("click", function (event) {
+  const button = event.target.closest(".app-sidebar__item")
+  if (!button) return
+
+  currentSidebarFilter = button.dataset.filter
+  appSidebar.querySelectorAll(".app-sidebar__item").forEach((item) => {
+    item.classList.toggle("is-active", item === button)
+  })
+  applyFilters()
 })
+
+newTaskButton.addEventListener("click", openCreateMode)
+taskDrawerClose.addEventListener("click", closeDrawer)
+taskDrawerOverlay.addEventListener("click", closeDrawer)
+deleteConfirmCancel.addEventListener("click", closeDeleteConfirm)
+deleteConfirmOverlay.addEventListener("click", function (event) {
+  if (event.target === deleteConfirmOverlay) closeDeleteConfirm()
+})
+
+deleteConfirmSubmit.addEventListener("click", async function () {
+  if (pendingDeleteId === null) return
+
+  const taskId = pendingDeleteId
+  const shouldCloseDrawer = closeDrawerAfterDelete
+  deleteConfirmCancel.disabled = true
+  deleteConfirmSubmit.disabled = true
+  deleteConfirmSubmit.textContent = "Deleting…"
+  setOperationLoading(true)
+
+  try {
+    await deleteTask(taskId)
+    closeDeleteConfirm({ restoreFocus: false })
+
+    if (shouldCloseDrawer && taskDrawer.classList.contains("is-open")) {
+      closeDrawer()
+    } else {
+      taskListHeading.focus()
+    }
+
+    showToast("Task deleted.", "success")
+  } catch (error) {
+    reportApiError("Could not delete the task.", error)
+  } finally {
+    setOperationLoading(false)
+    deleteConfirmCancel.disabled = false
+    deleteConfirmSubmit.disabled = false
+    deleteConfirmSubmit.textContent = "Delete task"
+  }
+})
+
+document.addEventListener("keydown", function (event) {
+  if (!deleteConfirmOverlay.hidden) {
+    if (event.key === "Escape") closeDeleteConfirm()
+    trapFocus(event, deleteConfirmDialog)
+    return
+  }
+
+  if (taskDrawer.classList.contains("is-open")) {
+    if (event.key === "Escape") {
+      closeDrawer()
+      return
+    }
+
+    trapFocus(event, taskDrawer)
+  }
+})
+
 function filterTasksBySidebar(filter) {
   const today = getTodayDate()
-  if (filter === "all") {
-    return tasks
-  }
+
   if (filter === "today") {
     return tasks.filter((task) => task.dueDate === today)
   }
-
   if (filter === "upcoming") {
     return tasks.filter(
       (task) => task.dueDate > today && task.status !== "done",
@@ -246,91 +802,146 @@ function filterTasksBySidebar(filter) {
       (task) => task.dueDate && task.dueDate < today && task.status !== "done",
     )
   }
+
   return tasks
 }
-const appSidebar = document.querySelector(".app-sidebar")
-appSidebar.addEventListener("click", function (event) {
-  const button = event.target.closest(".app-sidebar__item")
 
-  if (!button) return
+function sortTasks(list) {
+  const sortedTasks = [...list]
+  const compareIdsDescending = (taskA, taskB) => Number(taskB.id) - Number(taskA.id)
 
-  currentSidebarFilter = button.dataset.filter
+  if (currentSort === "oldest") {
+    return sortedTasks.sort((taskA, taskB) => Number(taskA.id) - Number(taskB.id))
+  }
+
+  if (currentSort === "priority") {
+    const priorityOrder = { high: 3, medium: 2, low: 1 }
+    return sortedTasks.sort(
+      (taskA, taskB) =>
+        priorityOrder[taskB.priority] - priorityOrder[taskA.priority] ||
+        compareIdsDescending(taskA, taskB),
+    )
+  }
+
+  if (currentSort === "due-asc" || currentSort === "due-desc") {
+    const direction = currentSort === "due-asc" ? 1 : -1
+
+    return sortedTasks.sort((taskA, taskB) => {
+      if (!taskA.dueDate && !taskB.dueDate) return compareIdsDescending(taskA, taskB)
+      if (!taskA.dueDate) return 1
+      if (!taskB.dueDate) return -1
+
+      return (
+        taskA.dueDate.localeCompare(taskB.dueDate) * direction ||
+        compareIdsDescending(taskA, taskB)
+      )
+    })
+  }
+
+  return sortedTasks.sort(compareIdsDescending)
+}
+
+function resetTaskFilters() {
+  currentSidebarFilter = "all"
+  currentPriorityFilter = "all"
+  currentSearchQuery = ""
+  taskPriorityFilter.value = "all"
+  taskSearch.value = ""
+
+  appSidebar.querySelectorAll(".app-sidebar__item").forEach((item) => {
+    item.classList.toggle("is-active", item.dataset.filter === "all")
+  })
 
   applyFilters()
-})
+}
+
+function applyFilters({ animate = true } = {}) {
+  let filteredTasks = filterTasksBySidebar(currentSidebarFilter)
+
+  if (currentPriorityFilter !== "all") {
+    filteredTasks = filteredTasks.filter(
+      (task) => task.priority === currentPriorityFilter,
+    )
+  }
+
+  if (currentSearchQuery) {
+    filteredTasks = filteredTasks.filter((task) => {
+      const searchableText = `${task.title} ${task.description || ""}`.toLocaleLowerCase()
+      return searchableText.includes(currentSearchQuery)
+    })
+  }
+
+  renderTasks(sortTasks(filteredTasks), { animate })
+}
+
 function updateSidebarCounts() {
   const today = getTodayDate()
 
-  const countAll = document.getElementById("count-all")
-  const countToday = document.getElementById("count-today")
-  const countUpcoming = document.getElementById("count-upcoming")
-  const countCompleted = document.getElementById("count-completed")
-  const countOverdue = document.getElementById("count-overdue")
-  countAll.textContent = tasks.length
-
-  countToday.textContent = tasks.filter((task) => task.dueDate === today).length
-
-  countUpcoming.textContent = tasks.filter(
+  document.getElementById("count-all").textContent = tasks.length
+  document.getElementById("count-today").textContent = tasks.filter(
+    (task) => task.dueDate === today,
+  ).length
+  document.getElementById("count-upcoming").textContent = tasks.filter(
     (task) => task.dueDate > today && task.status !== "done",
   ).length
-  countCompleted.textContent = tasks.filter(
+  document.getElementById("count-completed").textContent = tasks.filter(
     (task) => task.status === "done",
   ).length
-  countOverdue.textContent = tasks.filter(
+  document.getElementById("count-overdue").textContent = tasks.filter(
     (task) => task.dueDate && task.dueDate < today && task.status !== "done",
   ).length
 }
+
 function getTodayDate() {
   const today = new Date()
   const year = today.getFullYear()
   const month = String(today.getMonth() + 1).padStart(2, "0")
   const day = String(today.getDate()).padStart(2, "0")
+
   return `${year}-${month}-${day}`
 }
-async function loadTasksFromApi() {
-  try {
-    const response = await fetch("api/tasks.php")
-    if (!response.ok) {
-      throw new Error(`HTTP error: ${response.status}`)
-    }
-    const data = await response.json()
-    tasks = data
-    applyFilters()
-    updateSidebarCounts()
-  } catch (error) {
-    console.error("Failed to load tasks:", error)
+
+async function loadTasksFromApi({ showLoading = false } = {}) {
+  if (showLoading) renderInitialLoadingState()
+
+  const data = await apiRequest(API_URL)
+
+  if (!Array.isArray(data.tasks)) {
+    throw new Error("API response does not contain a tasks array.")
   }
+
+  tasks = data.tasks
+  applyFilters()
+  updateSidebarCounts()
 }
-loadTasksFromApi()
-async function createTaskOnServer(task) {
-  console.log("POST function started", task)
+
+async function apiRequest(url, options = {}) {
+  const response = await fetch(url, options)
+  let payload
+
   try {
-    const response = await fetch("api/tasks.php", {
-      method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-      },
-
-      body: JSON.stringify(task),
-    })
-    console.log("POST response:", response)
-    if (!response.ok) {
-      throw new Error(`HTTP error: ${response.status}`)
-    }
-
-    const data = await response.json()
-
-    console.log(data)
+    payload = await response.json()
   } catch (error) {
-    console.error("Failed to create task:", error)
+    throw new Error(`Server returned invalid JSON (HTTP ${response.status}).`)
   }
+
+  if (!response.ok || payload.success !== true) {
+    const message = payload.error?.message || `HTTP error: ${response.status}`
+    throw new Error(message)
+  }
+
+  return payload.data
 }
-createTaskOnServer({
-  id: Date.now(),
-  title: "My first POST task",
-  description: "Sent from JavaScript",
-  dueDate: "2026-09-30",
-  priority: "high",
-  status: "todo",
-})
+
+function reportApiError(message, error) {
+  console.error(message, error)
+  showToast(`${message} ${error.message}`, "error")
+}
+
+function handleLoadError(error) {
+  renderLoadError()
+  reportApiError("Could not load tasks.", error)
+}
+
+renderInitialLoadingState()
+loadTasksFromApi().catch(handleLoadError)
