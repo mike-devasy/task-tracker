@@ -7,11 +7,14 @@ let currentPriorityFilter = "all"
 let currentSidebarFilter = "all"
 let currentSearchQuery = ""
 let currentSort = "newest"
+let currentView = "list"
 let lastFocusedElement = null
 let pendingDeleteId = null
 let closeDrawerAfterDelete = false
 let confirmLastFocusedElement = null
 let toastTimer = null
+let draggedTaskId = null
+const pendingStatusUpdates = new Set()
 
 const taskList = document.getElementById("task-list")
 const taskListHeader = document.getElementById("task-list-header")
@@ -21,6 +24,7 @@ const tasksPanel = document.querySelector(".tasks-panel")
 const taskPriorityFilter = document.getElementById("task-priority-filter")
 const taskSearch = document.getElementById("task-search")
 const taskSort = document.getElementById("task-sort")
+const viewSwitcher = document.querySelector(".view-switcher")
 const appSidebar = document.querySelector(".app-sidebar")
 const newTaskButton = document.getElementById("new-task-button")
 const taskDrawer = document.getElementById("task-drawer")
@@ -34,6 +38,13 @@ const deleteConfirmDialog = document.getElementById("delete-confirm-dialog")
 const deleteConfirmDescription = document.getElementById("delete-confirm-description")
 const deleteConfirmCancel = document.getElementById("delete-confirm-cancel")
 const deleteConfirmSubmit = document.getElementById("delete-confirm-submit")
+
+const BOARD_COLUMNS = [
+  { status: "todo", label: "To do" },
+  { status: "in_progress", label: "In progress" },
+  { status: "done", label: "Done" },
+]
+const BOARD_STATUSES = new Set(BOARD_COLUMNS.map(({ status }) => status))
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -121,11 +132,14 @@ function renderLoadError() {
   `
 }
 
-function renderTasks(list = tasks, { animate = true } = {}) {
+function prepareTaskView(list, { animate = true } = {}) {
   taskList.innerHTML = ""
   taskList.classList.toggle("is-entering", animate)
+  taskList.classList.remove("task-list--board")
   taskList.setAttribute("aria-busy", "false")
-  taskListHeader.hidden = list.length === 0
+  taskList.setAttribute("role", "list")
+  taskList.removeAttribute("aria-label")
+  taskListHeader.hidden = list.length === 0 || currentView === "board"
   const hasActiveFilters =
     currentSidebarFilter !== "all" ||
     currentPriorityFilter !== "all" ||
@@ -164,8 +178,14 @@ function renderTasks(list = tasks, { animate = true } = {}) {
         }
       </div>
     `
-    return
+    return false
   }
+
+  return true
+}
+
+function renderTaskList(list, options) {
+  if (!prepareTaskView(list, options)) return
 
   const today = getTodayDate()
 
@@ -228,6 +248,148 @@ function renderTasks(list = tasks, { animate = true } = {}) {
 
     taskList.appendChild(taskItem)
   })
+}
+
+function canDragTasks() {
+  return window.matchMedia(
+    "(hover: hover) and (pointer: fine) and (min-width: 721px)",
+  ).matches
+}
+
+function createKanbanCard(task) {
+  const card = document.createElement("article")
+  const isOverdue =
+    task.dueDate && task.dueDate < getTodayDate() && task.status !== "done"
+  const dragEnabled = canDragTasks() && !pendingStatusUpdates.has(task.id)
+
+  card.className = "kanban-card"
+  card.dataset.id = task.id
+  card.setAttribute("role", "listitem")
+  card.setAttribute("aria-label", `Open ${task.title} details`)
+  card.tabIndex = 0
+  card.draggable = dragEnabled
+
+  if (dragEnabled) {
+    card.title = "Drag to change status"
+  }
+  if (isOverdue) card.classList.add("is-overdue")
+  if (task.status === "done") card.classList.add("is-completed")
+  if (pendingStatusUpdates.has(task.id)) {
+    card.classList.add("is-updating")
+    card.setAttribute("aria-busy", "true")
+  }
+
+  card.innerHTML = `
+    <h4>${escapeHtml(task.title)}</h4>
+    <p>${escapeHtml(task.description || "No description")}</p>
+    <div class="kanban-card__footer">
+      <span class="badge badge--priority-${escapeHtml(task.priority)}">
+        ${escapeHtml(formatPriority(task.priority))}
+      </span>
+      <span class="kanban-card__date">${escapeHtml(formatDate(task.dueDate))}</span>
+    </div>
+  `
+
+  return card
+}
+
+function getDraggedTask(event) {
+  const transferredTaskId = Number(event.dataTransfer?.getData("text/plain"))
+  const taskId = draggedTaskId || transferredTaskId
+  return tasks.find((task) => task.id === taskId)
+}
+
+function handleKanbanDragOver(event) {
+  const column = event.currentTarget
+  const task = getDraggedTask(event)
+  const newStatus = column.dataset.status
+  if (!task || !BOARD_STATUSES.has(newStatus)) return
+
+  event.preventDefault()
+  event.dataTransfer.dropEffect = "move"
+  taskList.querySelectorAll(".kanban-column").forEach((item) => {
+    item.classList.toggle("is-drop-target", item === column && task.status !== newStatus)
+  })
+}
+
+function handleKanbanDragLeave(event) {
+  const column = event.currentTarget
+  if (column.contains(event.relatedTarget)) return
+  column.classList.remove("is-drop-target")
+}
+
+async function handleKanbanDrop(event) {
+  const column = event.currentTarget
+  const task = getDraggedTask(event)
+  const newStatus = column.dataset.status
+  const isValidDrop = Boolean(task && BOARD_STATUSES.has(newStatus))
+
+  if (isValidDrop) event.preventDefault()
+
+  clearBoardDragState()
+  draggedTaskId = null
+
+  if (!isValidDrop || task.status === newStatus) return
+  await updateTaskStatus(task.id, newStatus)
+}
+
+function renderBoard(list, options) {
+  if (!prepareTaskView(list, options)) return
+
+  taskListHeader.hidden = true
+  taskList.classList.add("task-list--board")
+  taskList.setAttribute("role", "region")
+  taskList.setAttribute("aria-label", "Kanban board")
+
+  const board = document.createElement("div")
+  board.className = "kanban-board"
+
+  BOARD_COLUMNS.forEach(({ status, label }) => {
+    const columnTasks = list.filter((task) => task.status === status)
+    const column = document.createElement("section")
+    const headingId = `kanban-${status}-heading`
+
+    column.className = "kanban-column"
+    column.dataset.status = status
+    column.setAttribute("aria-labelledby", headingId)
+    column.innerHTML = `
+      <header class="kanban-column__header">
+        <h3 id="${headingId}">${label}</h3>
+        <span
+          class="kanban-column__count"
+          aria-label="${columnTasks.length} ${columnTasks.length === 1 ? "task" : "tasks"}"
+        >
+          ${columnTasks.length}
+        </span>
+      </header>
+      <div class="kanban-column__tasks" role="list" aria-label="${label} tasks"></div>
+    `
+
+    const columnList = column.querySelector(".kanban-column__tasks")
+    if (columnTasks.length === 0) {
+      columnList.innerHTML = '<p class="kanban-column__empty">No tasks</p>'
+    } else {
+      columnTasks.forEach((task) => columnList.appendChild(createKanbanCard(task)))
+    }
+
+    column.addEventListener("dragenter", handleKanbanDragOver)
+    column.addEventListener("dragover", handleKanbanDragOver)
+    column.addEventListener("dragleave", handleKanbanDragLeave)
+    column.addEventListener("drop", handleKanbanDrop)
+
+    board.appendChild(column)
+  })
+
+  taskList.appendChild(board)
+}
+
+function renderTasks(list = tasks, options = {}) {
+  if (currentView === "board") {
+    renderBoard(list, options)
+    return
+  }
+
+  renderTaskList(list, options)
 }
 
 function setOperationLoading(isLoading) {
@@ -627,6 +789,56 @@ async function updateTask(form) {
   }
 }
 
+async function updateTaskStatus(taskId, newStatus) {
+  const task = tasks.find((item) => item.id === taskId)
+  if (!task || task.status === newStatus || pendingStatusUpdates.has(taskId)) return
+
+  const previousStatus = task.status
+  let putSucceeded = false
+
+  pendingStatusUpdates.add(taskId)
+  task.status = newStatus
+  updateSidebarCounts()
+  applyFilters({ animate: false })
+  setOperationLoading(true)
+
+  try {
+    await apiRequest(`${API_URL}?id=${encodeURIComponent(taskId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: task.title,
+        description: task.description || "",
+        dueDate: task.dueDate || "",
+        priority: task.priority,
+        status: newStatus,
+      }),
+    })
+    putSucceeded = true
+    await loadTasksFromApi()
+    showToast(`Task moved to ${formatStatus(newStatus)}.`, "success")
+  } catch (error) {
+    if (!putSucceeded) {
+      const currentTask = tasks.find((item) => item.id === taskId)
+      if (currentTask) currentTask.status = previousStatus
+      updateSidebarCounts()
+      applyFilters({ animate: false })
+    }
+
+    reportApiError("Could not change the task status.", error)
+  } finally {
+    pendingStatusUpdates.delete(taskId)
+    setOperationLoading(false)
+
+    const currentCard = taskList.querySelector(`.kanban-card[data-id="${taskId}"]`)
+    if (currentCard) {
+      currentCard.classList.remove("is-updating")
+      currentCard.removeAttribute("aria-busy")
+      currentCard.draggable = canDragTasks()
+    }
+  }
+}
+
 taskList.addEventListener("click", function (event) {
   if (event.target.closest(".empty-state__retry")) {
     loadTasksFromApi({ showLoading: true }).catch(handleLoadError)
@@ -650,17 +862,50 @@ taskList.addEventListener("click", function (event) {
     return
   }
 
-  const taskItem = event.target.closest(".task-item")
+  const taskItem = event.target.closest(".task-item, .kanban-card")
   if (!taskItem) return
   openTaskDrawer(Number(taskItem.dataset.id))
 })
 
 taskList.addEventListener("keydown", function (event) {
-  if (event.target !== event.target.closest(".task-item")) return
+  if (event.target !== event.target.closest(".task-item, .kanban-card")) return
   if (event.key !== "Enter" && event.key !== " ") return
 
   event.preventDefault()
   openTaskDrawer(Number(event.target.dataset.id))
+})
+
+function clearBoardDragState() {
+  taskList.querySelectorAll(".kanban-card.is-dragging").forEach((card) => {
+    card.classList.remove("is-dragging")
+  })
+  taskList.querySelectorAll(".kanban-column.is-drop-target").forEach((column) => {
+    column.classList.remove("is-drop-target")
+  })
+}
+
+taskList.addEventListener("dragstart", function (event) {
+  const card = event.target.closest(".kanban-card")
+  if (!card || currentView !== "board" || !canDragTasks()) {
+    event.preventDefault()
+    return
+  }
+
+  const taskId = Number(card.dataset.id)
+  if (pendingStatusUpdates.has(taskId)) {
+    event.preventDefault()
+    return
+  }
+
+  draggedTaskId = taskId
+  card.classList.add("is-dragging")
+  event.dataTransfer.effectAllowed = "move"
+  event.dataTransfer.setData("text/plain", String(taskId))
+})
+
+taskList.addEventListener("dragend", function () {
+  clearBoardDragState()
+  draggedTaskId = null
 })
 
 taskDrawerContent.addEventListener("submit", function (event) {
@@ -713,6 +958,19 @@ taskSearch.addEventListener("input", function (event) {
 
 taskSort.addEventListener("change", function (event) {
   currentSort = event.target.value
+  applyFilters()
+})
+
+viewSwitcher.addEventListener("click", function (event) {
+  const button = event.target.closest("[data-view]")
+  if (!button || button.dataset.view === currentView) return
+
+  currentView = button.dataset.view
+  viewSwitcher.querySelectorAll("[data-view]").forEach((item) => {
+    const isActive = item === button
+    item.classList.toggle("is-active", isActive)
+    item.setAttribute("aria-pressed", String(isActive))
+  })
   applyFilters()
 })
 

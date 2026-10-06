@@ -1,0 +1,9 @@
+/api/db.php
+.env
+.env.*
+*.log
+*.bak
+desktop.ini
+.idea/
+.vscode/
+dev-server.mjs

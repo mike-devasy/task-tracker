@@ -9,19 +9,27 @@
       content="A focused task management workspace for planning and tracking work."
     />
     <title>Tasker — Task Tracker</title>
-    <link rel="stylesheet" href="css/style.css" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="css/style.css?version=20261006-4" />
   </head>
   <body>
     <div class="app">
       <aside class="app-sidebar" aria-label="Task filters">
-        <a class="app-sidebar__brand" href="#main-content" aria-label="Tasker home">
+        <a
+          class="app-sidebar__brand"
+          href="#main-content"
+          aria-label="Tasker home"
+        >
           <span class="app-sidebar__brand-mark" aria-hidden="true">T</span>
           <span>Tasker</span>
         </a>
 
         <p class="app-sidebar__label">Workspace</p>
 
-        <nav class="app-sidebar__nav" aria-label="Filter tasks by date and status">
+        <nav
+          class="app-sidebar__nav"
+          aria-label="Filter tasks by date and status"
+        >
           <button
             type="button"
             class="app-sidebar__item is-active"
@@ -77,15 +85,21 @@
               </p>
             </div>
 
-            <button class="button button--primary" id="new-task-button" type="button">
+            <button
+              class="button button--primary"
+              id="new-task-button"
+              type="button"
+            >
               <span aria-hidden="true">+</span>
               New task
             </button>
           </header>
 
-          <section class="toolbar" aria-label="Task list controls">
+          <section class="toolbar" aria-label="Task controls">
             <div class="toolbar__group">
-              <label class="toolbar__label" for="task-priority-filter">Priority</label>
+              <label class="toolbar__label" for="task-priority-filter"
+                >Priority</label
+              >
               <select class="toolbar__control" id="task-priority-filter">
                 <option value="all" selected>All priorities</option>
                 <option value="low">Low</option>
@@ -109,7 +123,11 @@
 
               <label class="toolbar__group">
                 <span class="toolbar__label">Sort</span>
-                <select class="toolbar__control" id="task-sort" aria-label="Sort tasks">
+                <select
+                  class="toolbar__control"
+                  id="task-sort"
+                  aria-label="Sort tasks"
+                >
                   <option value="newest" selected>Newest first</option>
                   <option value="oldest">Oldest first</option>
                   <option value="due-asc">Due date: earliest</option>
@@ -117,20 +135,52 @@
                   <option value="priority">Priority: high to low</option>
                 </select>
               </label>
+
+              <div class="toolbar__group toolbar__view">
+                <span class="toolbar__label">View</span>
+                <div class="view-switcher" role="group" aria-label="Task view">
+                  <button
+                    class="view-switcher__button is-active"
+                    type="button"
+                    data-view="list"
+                    aria-pressed="true"
+                  >
+                    List
+                  </button>
+                  <button
+                    class="view-switcher__button"
+                    type="button"
+                    data-view="board"
+                    aria-pressed="false"
+                  >
+                    Board
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
 
           <section class="tasks-panel" aria-labelledby="task-list-heading">
             <div class="tasks-panel__header">
               <div>
-                <h2 class="tasks-panel__title" id="task-list-heading" tabindex="-1">
+                <h2
+                  class="tasks-panel__title"
+                  id="task-list-heading"
+                  tabindex="-1"
+                >
                   Your tasks
                 </h2>
-                <p class="tasks-panel__summary" id="visible-task-count">0 tasks</p>
+                <p class="tasks-panel__summary" id="visible-task-count">
+                  0 tasks
+                </p>
               </div>
             </div>
 
-            <div class="task-list-header" id="task-list-header" aria-hidden="true">
+            <div
+              class="task-list-header"
+              id="task-list-header"
+              aria-hidden="true"
+            >
               <span>Task</span>
               <span>Due date</span>
               <span>Priority</span>
@@ -138,7 +188,12 @@
               <span>Actions</span>
             </div>
 
-            <div class="task-list" id="task-list" role="list" aria-busy="true"></div>
+            <div
+              class="task-list"
+              id="task-list"
+              role="list"
+              aria-busy="true"
+            ></div>
           </section>
         </div>
       </main>
@@ -163,7 +218,9 @@
       <div class="task-drawer__header">
         <div>
           <p class="task-drawer__eyebrow">Task workspace</p>
-          <h2 class="task-drawer__title" id="task-drawer-title">Task details</h2>
+          <h2 class="task-drawer__title" id="task-drawer-title">
+            Task details
+          </h2>
         </div>
 
         <button
@@ -177,7 +234,12 @@
       <div class="task-drawer__content" id="task-drawer-content"></div>
     </aside>
 
-    <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <div
+      class="toast-region"
+      id="toast-region"
+      aria-live="polite"
+      aria-atomic="true"
+    ></div>
 
     <div class="confirm-overlay" id="delete-confirm-overlay" hidden>
       <section
@@ -194,16 +256,24 @@
           This task will be permanently removed from your workspace.
         </p>
         <div class="confirm-dialog__actions">
-          <button class="button button--secondary" id="delete-confirm-cancel" type="button">
+          <button
+            class="button button--secondary"
+            id="delete-confirm-cancel"
+            type="button"
+          >
             Cancel
           </button>
-          <button class="button button--danger" id="delete-confirm-submit" type="button">
+          <button
+            class="button button--danger"
+            id="delete-confirm-submit"
+            type="button"
+          >
             Delete task
           </button>
         </div>
       </section>
     </div>
 
-    <script src="js/app.js?v=20261005-4"></script>
+    <script src="js/app.js?v=20261006-3"></script>
   </body>
 </html>

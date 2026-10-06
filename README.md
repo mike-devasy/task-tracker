@@ -13,16 +13,18 @@ A small task management application with server-side persistence. Tasks can be c
 ## Features
 
 - MySQL-backed CRUD
+- List and Kanban board views over the same server data
 - Date, status, and priority filters
 - Search by title and description
 - Sort by due date, priority, or task id
 - Task details, create, and edit drawers
+- Desktop drag-and-drop status updates through the existing PUT endpoint
 - Loading, empty, error, and delete-confirmation states
 - Responsive table/card layouts
 
 ## Architecture
 
-The browser loads `index.html` and sends JSON requests with `fetch()` to `api/tasks.php`. The PHP endpoint validates task data and uses the PDO connection supplied by `api/db.php` to read and write the MySQL `tasks` table. After every successful write, the frontend performs a new GET so MySQL remains the source of truth.
+The browser loads `index.html` and sends JSON requests with `fetch()` to `api/tasks.php`. One filtered and sorted task collection is rendered as either a list or a Kanban board. The PHP endpoint validates task data and uses the PDO connection supplied by `api/db.php` to read and write the MySQL `tasks` table. After every successful write, including a Kanban status change, the frontend performs a new GET so MySQL remains the source of truth.
 
 ## Running locally
 
@@ -33,6 +35,15 @@ Requirements: PHP with the `pdo_mysql` extension, MySQL, and an existing `tasks`
 3. Open `http://localhost:8000`.
 
 Keep database credentials outside version control.
+
+### Local UI QA without MySQL
+
+For frontend-only testing, Node.js can run the included in-memory mock API:
+
+1. Run `node dev-server.mjs` from the project directory.
+2. Open `http://127.0.0.1:8791/` instead of opening `index.html` through `file://`.
+
+The mock follows the existing `/api/tasks.php` JSON contract and supports GET, POST, PUT, PATCH, and DELETE. It is not used by production, stores no data in MySQL, and resets all mock tasks when the process stops.
 
 ## Shared hosting
 
