@@ -33,17 +33,7 @@ Requirements: PHP with the `pdo_mysql` extension, MySQL, and an existing `tasks`
 1. Add `api/db.php` and create a PDO instance in `$pdo` using local database credentials.
 2. From the project directory, run `php -S localhost:8000`.
 3. Open `http://localhost:8000`.
-
 Keep database credentials outside version control.
-
-### Local UI QA without MySQL
-
-For frontend-only testing, Node.js can run the included in-memory mock API:
-
-1. Run `node dev-server.mjs` from the project directory.
-2. Open `http://127.0.0.1:8791/` instead of opening `index.html` through `file://`.
-
-The mock follows the existing `/api/tasks.php` JSON contract and supports GET, POST, PUT, PATCH, and DELETE. It is not used by production, stores no data in MySQL, and resets all mock tasks when the process stops.
 
 ## Shared hosting
 
